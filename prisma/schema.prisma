@@ -1,0 +1,214 @@
+// Prisma schema for Multi-Mode AI Assistant
+// Supports SQLite (dev) and PostgreSQL (prod)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Change to "postgresql" for production
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// MENU MANAGEMENT
+// ============================================================================
+
+model MenuCategory {
+  id          String     @id @default(cuid())
+  name        String     @unique // e.g., "Coffee", "ArabicCoffee", "Accessories"
+  displayName String?    // Optional Arabic display name
+  sortOrder   Int        @default(0)
+  enabled     Boolean    @default(true)
+  items       MenuItem[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([enabled])
+}
+
+model MenuItem {
+  id             String        @id @default(cuid())
+  name           String        @unique // English key, e.g., "almade_coffee_classic"
+  displayNameAr  String?       // Arabic display name
+  description    String?
+  categoryId     String
+  category       MenuCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  // Pricing structure
+  priceType      String        @default("weighted") // "weighted" or "fixed"
+  priceFixed     Float?        // For accessories and fixed-price items
+
+  // JSON field for weight-based pricing (SQLite/Postgres compatible)
+  // Format: {"250g": 7.00, "500g": 12.00, "1kg": 22.00}
+  pricesByWeight String?       // JSON string
+
+  // Item status
+  enabled        Boolean       @default(true)
+  inStock        Boolean       @default(true)
+
+  // Metadata
+  imageUrl       String?
+  sortOrder      Int           @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  cartItems      CartLineItem[]
+  orderItems     OrderItem[]
+
+  @@index([categoryId])
+  @@index([enabled])
+}
+
+model CardamomPricing {
+  id        String   @id @default(cuid())
+  level     String   @unique // "none", "light", "medium", "strong"
+  price     Float    // Extra charge (can be 0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// CART & ORDERS
+// ============================================================================
+
+model Cart {
+  id        String         @id @default(cuid())
+  sessionId String         @unique // Session identifier
+  userId    String?        // Optional user ID for logged-in users
+  items     CartLineItem[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model CartLineItem {
+  id         String   @id @default(cuid())
+  cartId     String
+  cart       Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  // Selected options
+  weight     String?  // "250g", "500g", "1kg" (null for fixed-price items)
+  cardamom   String?  // "none", "light", "medium", "strong"
+  quantity   Int      @default(1)
+
+  // Computed pricing (stored for consistency)
+  unitPrice  Float    // Price per unit at time of add
+  lineTotal  Float    // unitPrice * quantity
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([cartId])
+  @@index([menuItemId])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  sessionId   String
+  userId      String?
+
+  // Order details
+  status      String      @default("new") // "new", "in_progress", "completed", "cancelled"
+  items       OrderItem[]
+
+  // Pricing
+  subtotal    Float
+  tax         Float       @default(0)
+  discount    Float       @default(0)
+  total       Float
+
+  // Metadata
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([sessionId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  // Snapshot of selected options (at time of order)
+  weight     String?
+  cardamom   String?
+  quantity   Int
+
+  // Snapshot of pricing (at time of order)
+  unitPrice  Float
+  lineTotal  Float
+
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+  @@index([menuItemId])
+}
+
+// ============================================================================
+// CHAT HISTORY (Per-Mode Isolation)
+// ============================================================================
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String   // Session identifier
+  mode      String   // "mode1", "mode2", "mode3", "mode4"
+  role      String   // "user", "assistant", "system"
+  content   String   // Message content
+
+  // Optional metadata
+  isJson    Boolean  @default(false) // True if message is JSON action
+  metadata  String?  // JSON string for additional metadata
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, mode])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// PROMPT MANAGEMENT
+// ============================================================================
+
+model PromptRevision {
+  id        String   @id @default(cuid())
+  mode      String   // "mode1", "mode2", "mode3", "mode4"
+  content   String   // Full prompt text
+  version   Int      // Incremental version number
+  isCurrent Boolean  @default(false) // True for the active version
+
+  // Metadata
+  editedBy  String?  // Optional admin identifier
+  notes     String?  // Optional change notes
+  createdAt DateTime @default(now())
+
+  @@index([mode, isCurrent])
+  @@index([mode, version])
+}
+
+// ============================================================================
+// ADMIN SETTINGS
+// ============================================================================
+
+model AdminSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique // Setting key (e.g., "currency", "tax_rate")
+  value     String   // Setting value (JSON string for complex values)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}
