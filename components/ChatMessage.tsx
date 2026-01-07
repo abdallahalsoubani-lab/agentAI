@@ -15,25 +15,9 @@ interface ChatMessageProps {
 export default function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user'
 
-  // If JSON, display as code block
+  // Hide JSON messages completely
   if (message.isJson) {
-    try {
-      const parsed = JSON.parse(message.content)
-      return (
-        <div className="flex justify-start">
-          <div className="max-w-[80%] bg-gray-100 dark:bg-gray-700 rounded-lg p-4">
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Action Event
-            </div>
-            <pre className="text-sm overflow-x-auto">
-              <code>{JSON.stringify(parsed, null, 2)}</code>
-            </pre>
-          </div>
-        </div>
-      )
-    } catch {
-      // Fallback if parsing fails
-    }
+    return null
   }
 
   return (
